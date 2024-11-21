@@ -53,7 +53,7 @@ def calc_Ωeff_Δeff(series: pd.Series):
     H_2x2 = project_3x3_to_2x2(Hamiltonian_3x3(series)).data.to_array()
     Ω_eff = np.abs(H_2x2[0, 1]).real
     Δ_eff = (H_2x2[1, 1] - H_2x2[0, 0]).real
-    return pd.Series([Ω_eff, Δ_eff, np.abs(Ω_eff / Δ_eff).real], index=['Ω_eff', 'Δ_eff', 'Ω_eff/Δ_eff'],
+    return pd.Series([Ω_eff, Δ_eff, Ω_eff / Δ_eff], index=['Ω_eff', 'Δ_eff', 'Ω_eff/Δ_eff'],
                      dtype=np.float64)
 
 
@@ -70,9 +70,9 @@ def calc_adiabaticity_ab(dataframe: pd.DataFrame, force: bool = False):
     if force == False and 'adiabaticity_ab' in dataframe.columns:
         return
     divis = pd.DataFrame()
-    divis['δ/Δ'] = dataframe['δ'] / np.abs(dataframe['Δ'])
-    divis['Ω_a/Δ'] = dataframe['Ω_a'] / np.abs(dataframe['δ'])
-    divis['Ω_b/Δ'] = dataframe['Ω_b'] / np.abs(dataframe['δ'])
+    divis['δ/Δ'] = dataframe['δ'].abs() / dataframe['Δ'].abs()
+    divis['Ω_a/Δ'] = dataframe['Ω_a'] / (dataframe['Δ']).abs()
+    divis['Ω_b/Δ'] = dataframe['Ω_b'] / (dataframe['Δ']).abs()
     dataframe['adiabaticity_ab'] = divis.max(axis=1)
 
 
@@ -84,7 +84,7 @@ def calc_analytic_eff(dataframe: pd.DataFrame):
             and 'Δ_ana_eff' in dataframe.columns
             and 'Ω_ana_eff/Δ_ana_eff' in dataframe.columns):
         return
-    dataframe['Ω_ana_eff'] = dataframe['Ω_a'] * np.conj(dataframe['Ω_b']) / dataframe['Δ']
+    dataframe['Ω_ana_eff'] = np.abs(dataframe['Ω_a'] * np.conj(dataframe['Ω_b']) / dataframe['Δ'])
     dataframe['Δ_ana_eff'] = (2 * dataframe['δ']
                               + dataframe['Ω_b'].abs() ** 2 / dataframe['Δ']
                               - dataframe['Ω_a'].abs() ** 2 / dataframe['Δ'])
@@ -102,8 +102,8 @@ Parameters which work for
 free_params_bounds = {
     'Ω_a': [0 * punit, 100 * punit],
     'Ω_b': [0 * punit, 100 * punit],
-    'δ': [-1000 * punit, 1000 * punit],
-    'Δ': [-1000 * punit, 1000 * punit],
+    'δ': [-10 * punit, 10 * punit],
+    'Δ': [1000 * punit, 1000 * punit],
 }
 
 
@@ -117,6 +117,10 @@ def add_new_params(dataframe: pd.DataFrame, length: int):
     new_df = new_df[(new_df['δ'].abs() > delta_threshold)
                     & (new_df['Δ'].abs() > delta_threshold)]
 
+    if new_df.empty:
+        warnings.warn("No data added to the dataframe")
+        return dataframe
+
     # Calculate some meaningful quantities for a sample
     new_df['δ/Δ'] = new_df['δ'] / new_df['Δ']
     new_df['Ω_a/Δ'] = new_df['Ω_a'] / new_df['Δ']
@@ -124,20 +128,26 @@ def add_new_params(dataframe: pd.DataFrame, length: int):
 
     # FIXME could be done in a more efficient way
     calc_adiabaticity_ab(new_df)
-    if not new_df.empty:
-        new_df = new_df[new_df['adiabaticity_ab'] < 1e-1]
+    # new_df = new_df[new_df['adiabaticity_ab'] < 1e-1]
+    if new_df.empty:
+        warnings.warn("No data added to the dataframe")
+        return dataframe
 
     new_df[['Ω_eff', 'Δ_eff', 'Ω_eff/Δ_eff']] = new_df.apply(lambda row: calc_Ωeff_Δeff(row), axis=1)
     calc_analytic_eff(new_df)
     new_df['Ω_eff/Ω_ana_eff'] = new_df['Ω_eff'] / new_df['Ω_ana_eff']
     new_df['Δ_eff/Δ_ana_eff'] = new_df['Δ_eff'] / new_df['Δ_ana_eff']
 
+    new_df['valid?'] = (((new_df['Ω_eff/Ω_ana_eff'] - 1.0).abs() < 1e-2)
+                        & ((new_df['Δ_eff/Δ_ana_eff'] - 1.0).abs() < 1e-2)
+                        & (new_df['adiabaticity_ab'] < 1e-1))
+
     longer_df = pd.concat([dataframe, new_df], ignore_index=True)
     return longer_df
 
 
 df = pd.DataFrame()
-df = add_new_params(df, int(1e4))
+df = add_new_params(df, int(1e3))
 # %% Calculate some statistics
 while (len(df) < 1e4):
     df = add_new_params(df, int(1e3))
@@ -146,15 +156,14 @@ df.sort_values('Ω_eff/Δ_eff', inplace=True, ignore_index=True, ascending=False
 
 # %% Plot pairplot of the parameters
 sns.pairplot(df,
-             hue='Ω_eff/Δ_eff',
-             vars=['Ω_eff/Δ_eff', 'Ω_ana_eff/Δ_ana_eff', 'adiabaticity_ab',
-                   'Δ', 'Ω_eff/Ω_ana_eff', 'Δ_eff/Δ_ana_eff'],
+             hue='valid?',
+             vars=['Ω_a', 'Ω_b', 'δ', 'adiabaticity_ab', 'Ω_eff', 'Δ_eff'],  # , 'Ω_eff/Δ_eff'],
              diag_kind=None,
              kind='scatter',
-             # corner=True,
-             # plot_kws={'alpha': 0.8},
+             # palette='flare',
+             plot_kws=dict(marker=".", s=30)
              )
-plt.show()
+plt.show(dpi=1200)
 
 # %% Test the projection using time evolution comparison
 
