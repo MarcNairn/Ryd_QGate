@@ -137,7 +137,9 @@ def add_new_params(dataframe: pd.DataFrame, length: int):
     calc_analytic_eff(new_df)
     new_df['Ω_eff/Ω_ana_eff'] = new_df['Ω_eff'] / new_df['Ω_ana_eff']
     new_df['Δ_eff/Δ_ana_eff'] = new_df['Δ_eff'] / new_df['Δ_ana_eff']
+    new_df['Ω_a*Ω_b'] = new_df['Ω_a'] * new_df['Ω_b']
 
+    # FIXME why is analytic not numerical?
     new_df['valid?'] = (((new_df['Ω_eff/Ω_ana_eff'] - 1.0).abs() < 1e-2)
                         & ((new_df['Δ_eff/Δ_ana_eff'] - 1.0).abs() < 1e-2)
                         & (new_df['adiabaticity_ab'] < 1e-1))
@@ -157,7 +159,7 @@ df.sort_values('Ω_eff/Δ_eff', inplace=True, ignore_index=True, ascending=False
 # %% Plot pairplot of the parameters
 sns.pairplot(df,
              hue='valid?',
-             vars=['Ω_a', 'Ω_b', 'δ', 'adiabaticity_ab', 'Ω_eff', 'Δ_eff'],  # , 'Ω_eff/Δ_eff'],
+             vars=['Ω_a', 'Ω_b', 'Ω_a*Ω_b', 'δ', 'adiabaticity_ab', 'Ω_eff', 'Δ_eff'],  # , 'Ω_eff/Δ_eff'],
              diag_kind=None,
              kind='scatter',
              # palette='flare',
@@ -167,28 +169,29 @@ plt.show(dpi=1200)
 
 # %% Test the projection using time evolution comparison
 
-initial_state = ggg_state
+dataset_index = 8
+
+initial_state = a
 
 # Time evolution
-times = np.linspace(0, 240 * punit, 1000)  # Time range for simulation
+times = np.linspace(0, 2 * np.pi, 1000) / np.sqrt(
+    df.iloc[dataset_index]['Ω_eff'] ** 2 + df.iloc[dataset_index]['Δ_eff'] ** 2)
 
 # Solve the master equation
-result = mesolve(Hamiltonian_3x3(**df.iloc[0].to_dict()), initial_state, times,
-                 c_ops=[], e_ops=[], options={'nsteps': 1e8})
-# Extract expectation values
-P_ggg = expect(ggg_state * ggg_state.dag(), result.states)  # Probability of being in the ground state |gg>
-P_rrr = expect(rrr_state * rrr_state.dag(), result.states)  # Probability of being in the Rydberg state |rr>
-
-P_rr = expect(grr_state * grr_state.dag() + rgr_state * rgr_state.dag() * rrg_state * rrg_state.dag(), result.states)
-P_r = expect(ggr_state * ggr_state.dag() + grg_state * grg_state.dag() * rgg_state * rgg_state.dag(), result.states)
+res_3x3 = mesolve(Hamiltonian_3x3(df.iloc[0]), initial_state, times,
+                  c_ops=[], e_ops=[], options={'nsteps': 1e8})
+res_2x2 = mesolve(project_3x3_to_2x2(Hamiltonian_3x3(df.iloc[0])), basis(2, 0), times,
+                  c_ops=[], e_ops=[], options={'nsteps': 1e8})
 
 # Plot the probabilities and coherences
 plt.figure()
-plt.plot(times, P_ggg, label=r'$\langle \psi | ggg | \psi \rangle$ (Ground State)')
-plt.plot(times, P_rrr, label=r'$\langle \psi | rrr | \psi \rangle$ (Rydberg State)')
-# plt.plot(times, P_rr, label=r'$\langle \psi | P_{rr} | \psi \rangle$ (Doubly excited)' )
-# plt.plot(times, P_r, label=r'$\langle \psi | P_r | \psi \rangle$ (Singly excited)' )
-plt.xlabel('Time (arb. units)')
+plt.plot(times, expect(a.proj(), res_3x3.states), label=r'$P_{a,\mathrm{num}}$')
+plt.plot(times, expect(b.proj(), res_3x3.states), label=r'$P_{b,\mathrm{num}}$')
+plt.plot(times, expect(basis(2, 0).proj(), res_2x2.states),
+         '--', label=r'$P_{a,\mathrm{ana}}$')
+plt.plot(times, expect(basis(2, 1).proj(), res_2x2.states),
+         '--', label=r'$P_{b,\mathrm{ana}}$')
+plt.xlabel('Time $1/\Omega_\mathrm{eff}$')
 plt.ylabel('Probability')
 plt.legend()
 plt.tight_layout(pad=0.2)
