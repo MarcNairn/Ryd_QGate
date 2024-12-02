@@ -2,7 +2,7 @@
 In this notebook we simulate the dynamics of three Rydberg atoms to efficiently generate
 triply ground-to-excited transitions governed by a collective Rabi frequency (transition amplitude) $\overline{\Omega}$
 """
-#%%
+# %%
 import warnings
 
 from functools import singledispatch
@@ -114,12 +114,12 @@ def _(dataframe: pd.DataFrame, force: bool = False):
 
 # %% define the Deltas
 
-def Delta_ggg(**kwargs):
-    return (
-            -kwargs['Ω2'] ** 2 / kwargs['δ2']
-            - Ω_1t(0, **kwargs) ** 2 / Δ_1(0, **kwargs)
-            - Ω_3t(0, **kwargs) ** 2 / Δ_3(0, **kwargs)
-    )
+# def Delta_ggg(**kwargs):
+#    return (
+#            -kwargs['Ω2'] ** 2 / kwargs['δ2']
+#            - Ω_1t(0, **kwargs) ** 2 / Δ_1(0, **kwargs)
+#            - Ω_3t(0, **kwargs) ** 2 / Δ_3(0, **kwargs)
+#    )
 
 
 # def Delta_ggr(**kwargs):
@@ -147,18 +147,19 @@ def Delta_rrg(**kwargs):
 
 
 def Delta_rrr(**kwargs):
-    return Delta_ggg(**kwargs) + Δ_1(0, **kwargs) + kwargs['δ2'] + Δ_3(0, **kwargs)
+    return Δ_1(-1, **kwargs) + kwargs['δ2'] + Δ_3(1, **kwargs)
 
 
 # %% Define the 5x5 Hamiltonian matrix
 ggg_state = basis(8, 0)
-rrr_state = basis(8,1)
-rgg_state = basis(8,2) 
-grg_state = basis(8,3)
-ggr_state = basis(8,4)
-rrg_state = basis(8,5)
-rgr_state = basis(8,6)
-grr_state = basis(8,7)
+rrr_state = basis(8, 1)
+rgg_state = basis(8, 2)
+grg_state = basis(8, 3)
+ggr_state = basis(8, 4)
+rrg_state = basis(8, 5)
+rgr_state = basis(8, 6)
+grr_state = basis(8, 7)
+
 
 def Hamiltonian_8x8(series: pd.Series):
     kwargs = series.to_dict()
@@ -168,19 +169,27 @@ def Hamiltonian_8x8(series: pd.Series):
 
     # Add the off-diagonal elements
     H_8x8 += Ω_1t(0, **kwargs) * rgg_state * ggg_state.dag()
-    H_8x8 += kwargs['Ω2'] * rgg_state * grg_state.dag()
-    H_8x8 += Ω_3t(0, **kwargs) * rgg_state * ggr_state.dag()
-    H_8x8 += Ω_1t(-1, **kwargs) * rgr_state * ggg_state.dag()
-    H_8x8 += Ω_3t(1, **kwargs) * grg_state * ggr_state.dag()
-    H_8x8 += Ω_1t(0, **kwargs) * grg_state * rgr_state.dag()
-    H_8x8 += Ω_3t(0, **kwargs) * grr_state * ggr_state.dag()
-    H_8x8 += kwargs['Ω2'] * grr_state * rgr_state.dag()
+    H_8x8 += kwargs['Ω2'] * grg_state * ggg_state.dag()
+    H_8x8 += Ω_3t(0, **kwargs) * ggr_state * ggg_state.dag()
+
+    H_8x8 += Ω_3t(1, **kwargs) * rrg_state * rrr_state.dag()
+    H_8x8 += kwargs['Ω2'] * rgr_state * rrr_state.dag()
+    H_8x8 += Ω_1t(-1, **kwargs) * grr_state * rrr_state.dag()
+
+    H_8x8 += kwargs['Ω2'] * rrg_state * rgg_state.dag()
+    H_8x8 += Ω_3t(1, **kwargs) * rgr_state * rgg_state.dag()
+
+    H_8x8 += Ω_1t(0, **kwargs) * rrg_state * grg_state.dag()
+    H_8x8 += Ω_3t(0, **kwargs) * grr_state * grg_state.dag()
+
+    H_8x8 += Ω_1t(-1, **kwargs) * rgr_state * ggr_state.dag()
+    H_8x8 += kwargs['Ω2'] * grr_state * ggr_state.dag()
 
     # Add the Hermitian conjugate (upper triangular part)
     H_8x8 += H_8x8.dag()
 
     # Add the diagonal elements
-    H_8x8 += Delta_ggg(**kwargs) * ggg_state.proj()
+    # H_8x8 += Delta_ggg(**kwargs) * ggg_state.proj()
     H_8x8 += Delta_rrr(**kwargs) * rrr_state.proj()
     H_8x8 += Δ_1(0, **kwargs) * rgg_state.proj()
     H_8x8 += kwargs['δ2'] * grg_state.proj()
@@ -197,20 +206,21 @@ def Hamiltonian_8x8(series: pd.Series):
 
 # %% Functions to analyze a parameter set
 
-def project_8x8_to_2x2(H_8x8, approx: bool):
+def project_8x8_to_2x2(H_8x8, approx: bool = False):
     P = rrr_state.proj().to('CSR') + ggg_state.proj().to('CSR')
     Q = qeye(8).to('CSR') - P
-    
-    if approx==True:
-        M_Delta = Qobj(np.diag(np.diag((Q*H_8x8*Q).full())))
-        M_Omega =  Q*H_8x8*Q - M_Delta  
+
+    if approx:
+        M_Delta = Qobj(np.diag(np.diag((Q * H_8x8 * Q).full())))
+        M_Omega = Q * H_8x8 * Q - M_Delta
 
         M_Deltainv = (M_Delta + 10e-10 * qeye(8)).inv()
-        H_traced = P * H_8x8 * P - P * H_8x8 * Q * (M_Deltainv - M_Deltainv*M_Omega*M_Deltainv) * Q * H_8x8 * P
+        H_traced = P * H_8x8 * P - P * H_8x8 * Q * (M_Deltainv - M_Deltainv * M_Omega * M_Deltainv) * Q * H_8x8 * P
     else:
         H_traced = P * H_8x8 * P - P * H_8x8 * Q * (Q * H_8x8 * Q + 10e-10 * qeye(8)).inv(sparse=True) * Q * H_8x8 * P
 
-    return Qobj(np.array([[H_traced[0, 0], H_traced[0, -1]], [H_traced[-1, 0], H_traced[-1, -1]]]))
+    # FIXME could be extracted by using projection operators of the states to be independent on basis definition
+    return Qobj(np.array([[H_traced[0, 0], H_traced[0, 1]], [H_traced[1, 0], H_traced[1, 1]]]))
 
 
 def calc_ΩR_ΔR(series: pd.Series):
@@ -218,7 +228,7 @@ def calc_ΩR_ΔR(series: pd.Series):
     Calculate the effective Rabi frequency and detuning for the collective states |ggg> and |rrr>
     :returns: |Ω_R|/|Δ_R|
     """
-    H_2x2 = project_8x8_to_2x2(Hamiltonian_8x8(series), approx=True).data.to_array()
+    H_2x2 = project_8x8_to_2x2(Hamiltonian_8x8(series), approx=False).data.to_array()
     print("Effective H_2x2:", H_2x2)
     ΩR = H_2x2[0, 1].real
     ΔR = (H_2x2[0, 0] - H_2x2[1, 1]).real
@@ -392,8 +402,8 @@ df.sort_values('ΩR', inplace=True, ignore_index=True, ascending=False)
 
 # %% Plot pairplot of the parameters
 sns.pairplot(df,
-             hue='ΩR',
-             vars=['ΩR', 'adiabaticity_ab_cavity_coupling', 'ΔR',
+             hue='ΩR/ΔR',
+             vars=['ΩR', 'ΔR',
                    'adiabaticity_one_r_eff_Rabi', 'Ω1'],
              diag_kind=None,
              kind='scatter',
@@ -416,12 +426,11 @@ result = mesolve(Hamiltonian_8x8(df.iloc[0]), initial_state, times,
 P_ggg = expect(ggg_state * ggg_state.dag(), result.states)  # Probability of being in the ground state |gg>
 P_rrr = expect(rrr_state * rrr_state.dag(), result.states)  # Probability of being in the Rydberg state |rr>
 
-
-resul2x2 = mesolve(project_8x8_to_2x2(Hamiltonian_8x8(df.iloc[0]), approx=False), basis(2,0).proj(), times,
-                 c_ops=[], e_ops=[], options={'nsteps': 1e8})
+resul2x2 = mesolve(project_8x8_to_2x2(Hamiltonian_8x8(df.iloc[0]), approx=False), basis(2, 0).proj(), times,
+                   c_ops=[], e_ops=[], options={'nsteps': 1e8})
 # Extract expectation values
-P_ggg2x2= expect(basis(2,0).proj(), resul2x2.states)  # Probability of being in the ground state |gg>
-P_rrr2x2 = expect(basis(2,1).proj(), resul2x2.states)  # Probability of being in the Rydberg state |rr>
+P_ggg2x2 = expect(basis(2, 0).proj(), resul2x2.states)  # Probability of being in the ground state |gg>
+P_rrr2x2 = expect(basis(2, 1).proj(), resul2x2.states)  # Probability of being in the Rydberg state |rr>
 
 # Plot the probabilities and coherences
 plt.figure()
