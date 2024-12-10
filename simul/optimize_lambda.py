@@ -53,7 +53,7 @@ def calc_Ωeff_Δeff(series: pd.Series):
     H_2x2 = project_3x3_to_2x2(Hamiltonian_3x3(series)).data.to_array()
     Ω_eff = np.abs(H_2x2[0, 1]).real
     Δ_eff = (H_2x2[1, 1] - H_2x2[0, 0]).real
-    return pd.Series([Ω_eff, Δ_eff, Ω_eff / Δ_eff], index=['Ω_eff', 'Δ_eff', 'Ω_eff/Δ_eff'],
+    return pd.Series([Ω_eff, Δ_eff, np.abs(Ω_eff / Δ_eff)], index=['Ω_eff', 'Δ_eff', 'Ω_eff/Δ_eff'],
                      dtype=np.float64)
 
 
@@ -91,6 +91,40 @@ def calc_analytic_eff(dataframe: pd.DataFrame):
     dataframe['Ω_ana_eff/Δ_ana_eff'] = dataframe['Ω_ana_eff'] / dataframe['Δ_ana_eff']
 
 
+def compare_time_evolution(ds: pd.Series, show_plot=False):
+    # Time evolution
+    times = np.linspace(0, np.amin([4 * np.pi * np.sqrt(ds['Ω_a']*ds['Ω_b']), 10]), 1000)  # Time range for simulation
+
+    # Solve the master equation
+    result = sesolve(Hamiltonian_3x3(ds), a, times, e_ops=[], options={'nsteps': 1e8})
+    # Extract expectation values
+    P_a = expect(a.proj(), result.states)  # Probability of being in the ground state |ggg>
+    P_b = expect(b.proj(), result.states)  # P of one Rydberg state
+    P_e = expect(e.proj(), result.states)  # P of two Rydberg states
+
+    resul2x2 = sesolve(project_3x3_to_2x2(Hamiltonian_3x3(ds)), basis(2, 0), times, e_ops=[], options={'nsteps': 1e8})
+    # Extract expectation values
+    P_a2x2 = expect(basis(2, 0).proj(), resul2x2.states)  # Probability of being in the ground state |gg>
+    P_b2x2 = expect(basis(2, 1).proj(), resul2x2.states)  # Probability of being in the Rydberg state |rr>
+
+    # Plot the probabilities and coherences
+    if show_plot:
+        plt.figure()
+        plt.plot(times, P_a, label=r'$P_a (3x3)')
+        plt.plot(times, P_b, label=r'$P_b (3x3)')
+        plt.plot(times, P_e, label=r'$P_e (3x3)')
+
+        plt.plot(times, P_a2x2, label=r'$P_a (2x2)')
+        plt.plot(times, P_b2x2, label=r'$P_b (2x2)')
+
+        plt.xlabel('Time Ω_a t')
+        plt.ylabel('Probability')
+        plt.legend()
+        plt.tight_layout(pad=0.2)
+        plt.show()
+    return np.sum((P_a - P_a2x2) ** 2 + (P_b - P_b2x2) ** 2)
+
+
 # %% Parameter normalisation to define timescales
 punit = 1
 
@@ -103,7 +137,7 @@ free_params_bounds = {
     'Ω_a': [0 * punit, 100 * punit],
     'Ω_b': [0 * punit, 100 * punit],
     'δ': [-10 * punit, 10 * punit],
-    'Δ': [1000 * punit, 1000 * punit],
+    'Δ': [-1000 * punit, 1000 * punit],
 }
 
 
@@ -138,6 +172,11 @@ def add_new_params(dataframe: pd.DataFrame, length: int):
     new_df['Ω_eff/Ω_ana_eff'] = new_df['Ω_eff'] / new_df['Ω_ana_eff']
     new_df['Δ_eff/Δ_ana_eff'] = new_df['Δ_eff'] / new_df['Δ_ana_eff']
     new_df['Ω_a*Ω_b'] = new_df['Ω_a'] * new_df['Ω_b']
+    new_df['fidelity'] = np.log10(1 / new_df.apply(lambda row: compare_time_evolution(row), axis=1))
+    #new_df = new_df[new_df['fidelity'] > 1]
+    if new_df.empty:
+        warnings.warn("All data removed due to low fidelity")
+        return dataframe
 
     # FIXME why is analytic not numerical?
     new_df['valid?'] = (((new_df['Ω_eff/Ω_ana_eff'] - 1.0).abs() < 1e-2)
@@ -149,50 +188,24 @@ def add_new_params(dataframe: pd.DataFrame, length: int):
 
 
 df = pd.DataFrame()
-df = add_new_params(df, int(1e3))
+df = add_new_params(df, int(10))
 # %% Calculate some statistics
 while (len(df) < 1e4):
-    df = add_new_params(df, int(1e3))
+    df = add_new_params(df, int(10))
     print(f"Length of dataframe: {len(df)}")
-df.sort_values('Ω_eff/Δ_eff', inplace=True, ignore_index=True, ascending=False)
 
 # %% Plot pairplot of the parameters
-sns.pairplot(df,
-             hue='valid?',
-             vars=['Ω_a', 'Ω_b', 'Ω_a*Ω_b', 'δ', 'adiabaticity_ab', 'Ω_eff', 'Δ_eff'],  # , 'Ω_eff/Δ_eff'],
+df.sort_values('fidelity', inplace=True, ignore_index=True, ascending=True)
+sns.pairplot(df[np.abs(df['Ω_eff/Δ_eff']) < 5],
+             hue='fidelity',
+             vars=['Ω_a', 'Ω_b', 'Ω_a*Ω_b', 'Ω_eff/Δ_eff', 'δ', 'adiabaticity_ab', 'fidelity'],  # , 'Ω_eff/Δ_eff'],
              diag_kind=None,
              kind='scatter',
              # palette='flare',
-             plot_kws=dict(marker=".", s=30)
+             # plot_kws=dict(marker=".", s=30)
              )
 plt.show(dpi=1200)
 
 # %% Test the projection using time evolution comparison
 
-dataset_index = 8
-
-initial_state = a
-
-# Time evolution
-times = np.linspace(0, 2 * np.pi, 1000) / np.sqrt(
-    df.iloc[dataset_index]['Ω_eff'] ** 2 + df.iloc[dataset_index]['Δ_eff'] ** 2)
-
-# Solve the master equation
-res_3x3 = mesolve(Hamiltonian_3x3(df.iloc[0]), initial_state, times,
-                  c_ops=[], e_ops=[], options={'nsteps': 1e8})
-res_2x2 = mesolve(project_3x3_to_2x2(Hamiltonian_3x3(df.iloc[0])), basis(2, 0), times,
-                  c_ops=[], e_ops=[], options={'nsteps': 1e8})
-
-# Plot the probabilities and coherences
-plt.figure()
-plt.plot(times, expect(a.proj(), res_3x3.states), label=r'$P_{a,\mathrm{num}}$')
-plt.plot(times, expect(b.proj(), res_3x3.states), label=r'$P_{b,\mathrm{num}}$')
-plt.plot(times, expect(basis(2, 0).proj(), res_2x2.states),
-         '--', label=r'$P_{a,\mathrm{ana}}$')
-plt.plot(times, expect(basis(2, 1).proj(), res_2x2.states),
-         '--', label=r'$P_{b,\mathrm{ana}}$')
-plt.xlabel('Time $1/\Omega_\mathrm{eff}$')
-plt.ylabel('Probability')
-plt.legend()
-plt.tight_layout(pad=0.2)
-plt.show()
+compare_time_evolution(df.iloc[8], show_plot=True)
