@@ -415,8 +415,8 @@ df = pd.DataFrame()
 df = add_new_params(df, int(20))
 
 # %% Calculate some statistics
-while (len(df) < 20):
-    df = add_new_params(df, int(5e3))
+while (len(df) < 2000):
+    df = add_new_params(df, int(1e5))
     print(f"Length of dataframe: {len(df)}")
 
 # %%
