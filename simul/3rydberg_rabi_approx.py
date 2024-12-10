@@ -313,14 +313,14 @@ free_params_bounds = {
     'Ω1': [0 * punit, 100 * punit],
     'Ω2': [0 * punit, 100 * punit],
     'Ω3': [0 * punit, 100 * punit],
-    'δ1': [-1000 * punit, 1000 * punit],
-    'δ2': [-1000 * punit, 1000 * punit],
-    'δ3': [-1000 * punit, 1000 * punit],
-    'Δa': [-1000 * punit, 1000 * punit],
-    'Δb': [-1000 * punit, 1000 * punit],
-    'g_a': [0 * punit, 1000 * punit],
-    'g_b': [0 * punit, 1000 * punit],
-    'n': [1, 1],
+    'δ1': [450 * punit, 500 * punit],
+    'δ2': [-1000 * punit, -900 * punit],
+    'δ3': [450 * punit, 500 * punit],
+    'Δa': [500* punit, 1000 * punit],
+    'Δb': [500 * punit, 1000 * punit],
+    'g_a': [0 * punit, 100 * punit],
+    'g_b': [0 * punit, 100 * punit],
+    'n': [0, 10],
 }
 
 
@@ -341,7 +341,8 @@ free_params_bounds = {
 
 def add_new_params(dataframe: pd.DataFrame, length: int):
     # Generate the parameters set
-    free_params_set = {key: np.random.uniform(*value, length) for key, value in free_params_bounds.items()}
+    #free_params_set = {key: np.random.uniform(*value, length) for key, value in free_params_bounds.items()}
+    free_params_set = {key: np.random.randint(*value, size=length) for key, value in free_params_bounds.items()}
     new_df = pd.DataFrame(free_params_set)
 
     # Remove all detunings which are too close to zero
