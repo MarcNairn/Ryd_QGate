@@ -10,6 +10,7 @@ from functools import singledispatch
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import swifter
 from tqdm import tqdm
 import seaborn as sns
 from qutip import *
@@ -357,34 +358,34 @@ def add_new_params(dataframe: pd.DataFrame, length: int):
 
     # Calculate some meaningful quantities for a sample
     new_df['Ω1/δ1'] = new_df['Ω1'] / np.abs(new_df['δ1'])
-    new_df = new_df[new_df['Ω1/δ1'] < 1]
+    #new_df = new_df[new_df['Ω1/δ1'] < 1]
     if new_df.empty:
         warnings.warn("All data removed due to Ω1/δ1")
         return dataframe
     new_df['Ω2/δ2'] = new_df['Ω2'] / np.abs(new_df['δ2'])
-    new_df = new_df[new_df['Ω2/δ2'] < 1]
+    #new_df = new_df[new_df['Ω2/δ2'] < 1]
     if new_df.empty:
         warnings.warn("All data removed due to Ω2/δ2")
         return dataframe
     new_df['Ω3/δ3'] = new_df['Ω3'] / np.abs(new_df['δ3'])
-    new_df = new_df[new_df['Ω3/δ3'] < 1]
+    #new_df = new_df[new_df['Ω3/δ3'] < 1]
     if new_df.empty:
         warnings.warn("All data removed due to Ω3/δ3")
         return dataframe
 
     calc_adiabaticity_cavity_coupling(new_df)
-    new_df = new_df[new_df['adiabaticity_cavity_coupling'] < 1]
+    #new_df = new_df[new_df['adiabaticity_cavity_coupling'] < 1]
     if new_df.empty:
         warnings.warn("All data removed due to adiabaticity_cavity_coupling")
         return dataframe
     calc_adiabaticity_one_r_eff_Rabi(new_df)
-    new_df = new_df[new_df['adiabaticity_one_r_eff_Rabi'] < 1]
+    #new_df = new_df[new_df['adiabaticity_one_r_eff_Rabi'] < 1]
     if new_df.empty:
         warnings.warn("All data removed due to adiabaticity_one_r_eff_Rabi")
         return dataframe
 
     Ω_3t(new_df)
-    new_df[['ΩR', 'ΔR', 'ΩR/ΔR']] = new_df.apply(lambda row: calc_ΩR_ΔR(row), axis=1)
+    new_df[['ΩR', 'ΔR', 'ΩR/ΔR']] = new_df.swifter.apply(calc_ΩR_ΔR, axis=1)
     new_df = new_df[abs(new_df['ΩR/ΔR']) > 1e-2]
     if new_df.empty:
         warnings.warn("All data removed due to ΩR/ΔR")
@@ -397,8 +398,8 @@ def add_new_params(dataframe: pd.DataFrame, length: int):
         warnings.warn("All data removed due to resonance")
         return dataframe
     new_df['log ΩR/ΔR'] = np.log10(new_df['ΩR/ΔR'])
-    new_df['fidelity'] = new_df.apply(lambda row: compare_time_evolution(ds=row, show_plot=False), axis=1)
-    new_df = new_df[new_df['fidelity'] < 1e-1]
+    new_df['fidelity'] = new_df.swifter.apply(compare_time_evolution, axis=1)
+    #new_df = new_df[new_df['fidelity'] < 1e-1]
     if new_df.empty:
         warnings.warn("All data removed due to fidelity")
         return dataframe
@@ -441,6 +442,14 @@ plt.show()
 
 # %% Test the projection using time evolution comparison
 
-compare_time_evolution(ds=df.iloc[0], show_plot=True)
+for i,row in df.iterrows():
+    compare_time_evolution(ds=row, show_plot=True)
 
-# %%
+    'Δa': 20,
+    'Δb': 20,
+    'g_a': 1,
+    'g_b': 10,
+    'n': 1,
+})
+ds = df.iloc[1]
+compare_time_evolution(ds, show_plot=True)
