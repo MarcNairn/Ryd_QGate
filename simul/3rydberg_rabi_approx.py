@@ -63,76 +63,31 @@ def _(dataframe: pd.DataFrame, force: bool = False):
                         + dataframe['g_a'] ** 2 * (dataframe['n'] - 1) / dataframe['Δa'])
 
 
-# def H_atom1(**kwargs):
-#    # 2x2 matrix for the atom's Hamiltonian
-#    sqrt_n1 = np.sqrt(kwargs['n'] + 1)
-#
-#    H = np.array([[Delta1(**kwargs), kwargs['Ω1'] * kwargs['g_a'] / kwargs['δ1'] * sqrt_n1],
-#                  [kwargs['Ω1'] * kwargs['g_a'] / kwargs['δ1'] * sqrt_n1, 0]])
-#    return Qobj(H)
-#
-#
-# def H_atom2(**kwargs):
-#    # 2x2 matrix for the atom's Hamiltonian
-#    sqrt_n = np.sqrt(kwargs['n'])
-#    H = np.array([[Delta2(**kwargs), kwargs['Ω2'] * kwargs['g_b'] / kwargs['δ2'] * sqrt_n],
-#                  [kwargs['Ω2'] * kwargs['g_b'] / kwargs['δ2'] * sqrt_n, 0]])
-#    return Qobj(H)
-#
-#
-# def H_atom3(**kwargs):
-#    # 2x2 matrix for the atom's Hamiltonian
-#    sqrt_n1 = np.sqrt(kwargs['n'] + 1)
-#    H = np.array([[Delta3(**kwargs), kwargs['Ω3'] * kwargs['g_a'] / kwargs['δ3'] * sqrt_n1],
-#                  [kwargs['Ω3'] * kwargs['g_a'] / kwargs['δ3'] * sqrt_n1, 0]])
-#
-#    return Qobj(H)
-
 @singledispatch
 def Ω_1t(n_offset: int, **kwargs):
-    return kwargs['Ω1'] * kwargs['g_a'] * np.sqrt(kwargs['n'] + n_offset + 1) / kwargs['δ1']
+    return kwargs['Ω1'] * kwargs['g_a'] * np.sqrt(kwargs['n'] + n_offset + 1) / np.abs(kwargs['δ1'])
 
 
 @Ω_1t.register(pd.DataFrame)
 def _(dataframe: pd.DataFrame, force: bool = False):
     if force == False and 'Ω_1t' in dataframe.columns:
         return
-    dataframe['Ω_1t'] = dataframe['Ω1'] * dataframe['g_a'] * np.sqrt(dataframe['n'] + 1) / dataframe['δ1']
+    dataframe['Ω_1t'] = dataframe['Ω1'] * dataframe['g_a'] * np.sqrt(dataframe['n'] + 1) / np.abs(dataframe['δ1'])
 
 
 @singledispatch
 def Ω_3t(n_offset: int, **kwargs):
-    return kwargs['Ω3'] * kwargs['g_b'] * np.sqrt(kwargs['n'] + n_offset) / kwargs['δ3']
+    return kwargs['Ω3'] * kwargs['g_b'] * np.sqrt(kwargs['n'] + n_offset) / np.abs(kwargs['δ3'])
 
 
 @Ω_3t.register(pd.DataFrame)
 def _(dataframe: pd.DataFrame, force: bool = False):
     if force == False and 'Ω_3t' in dataframe.columns:
         return
-    dataframe['Ω_3t'] = dataframe['Ω3'] * dataframe['g_b'] * np.sqrt(dataframe['n']) / dataframe['δ3']
+    dataframe['Ω_3t'] = dataframe['Ω3'] * dataframe['g_b'] * np.sqrt(dataframe['n']) / np.abs(dataframe['δ3'])
 
 
 # %% define the Deltas
-
-# def Delta_ggg(**kwargs):
-#    return (
-#            -kwargs['Ω2'] ** 2 / kwargs['δ2']
-#            - Ω_1t(0, **kwargs) ** 2 / Δ_1(0, **kwargs)
-#            - Ω_3t(0, **kwargs) ** 2 / Δ_3(0, **kwargs)
-#    )
-
-
-# def Delta_ggr(**kwargs):
-#    return Δ_3(**kwargs)
-#
-#
-# def Delta_grg(**kwargs):
-#    return δ_2(**kwargs)
-#
-#
-# def Delta_rgg(**kwargs):
-#    return Δ_1(**kwargs)
-
 
 def Delta_grr(**kwargs):
     return Δ_3(0, **kwargs) + kwargs['δ2']
@@ -146,7 +101,7 @@ def Delta_rrg(**kwargs):
     return Δ_1(0, **kwargs) + kwargs['δ2']
 
 
-def Delta_rrr(**kwargs):
+def Δ_rrr(**kwargs):
     return Δ_1(-1, **kwargs) + kwargs['δ2'] + Δ_3(1, **kwargs)
 
 
@@ -190,7 +145,7 @@ def Hamiltonian_8x8(series: pd.Series):
 
     # Add the diagonal elements
     # H_8x8 += Delta_ggg(**kwargs) * ggg_state.proj()
-    H_8x8 += Delta_rrr(**kwargs) * rrr_state.proj()
+    H_8x8 += Δ_rrr(**kwargs) * rrr_state.proj()
     H_8x8 += Δ_1(0, **kwargs) * rgg_state.proj()
     H_8x8 += kwargs['δ2'] * grg_state.proj()
     H_8x8 += Δ_3(0, **kwargs) * ggr_state.proj()
@@ -223,38 +178,20 @@ def project_8x8_to_2x2(H_8x8, approx: bool = False):
     return Qobj(np.array([[H_traced[0, 0], H_traced[0, 1]], [H_traced[1, 0], H_traced[1, 1]]]))
 
 
-def calc_ΩR_ΔR(series: pd.Series):
+def calc_ΩR_ΔR(series: pd.Series, force=False):
     """
     Calculate the effective Rabi frequency and detuning for the collective states |ggg> and |rrr>
     :returns: |Ω_R|/|Δ_R|
     """
+    if force == False and 'ΩR' in series.index:
+        return
     H_2x2 = project_8x8_to_2x2(Hamiltonian_8x8(series), approx=False).data.to_array()
-    print("Effective H_2x2:", H_2x2)
-    ΩR = H_2x2[0, 1].real
+    ΩR = np.abs(H_2x2[0, 1].real)
     ΔR = (H_2x2[0, 0] - H_2x2[1, 1]).real
-    print(f"ΩR: {ΩR}, ΔR: {ΔR}")
     return pd.Series([ΩR, ΔR, np.abs(ΩR / ΔR).real], index=['ΩR', 'ΔR', 'ΩR/ΔR'], dtype=np.float64)
 
 
-def calc_adiabaticity_ab_eff_Rabi(dataframe: pd.DataFrame, force: bool = False):
-    """
-    In order to be able to eliminate the intermediate states |a> and |b> we need to have the following conditions:
-    δ1 >> Ω1, δ3 >> Ω3.
-    If these conditions are met, the result should be close to 0.
-    :returns max of Ω1/|δ1| and Ω3/|δ3|
-    """
-    if dataframe.empty:
-        warnings.warn("calc_adiabaticity_ab_eff_Rabi: Empty dataframe")
-        return
-    if force == False and 'adiabaticity_ab_eff_Rabi' in dataframe.columns:
-        return
-    divis = pd.DataFrame()
-    divis['Ω1/δ1'] = dataframe['Ω1'] / np.abs(dataframe['δ1'])
-    divis['Ω3/δ3'] = dataframe['Ω3'] / np.abs(dataframe['δ3'])
-    dataframe['adiabaticity_ab_eff_Rabi'] = divis.max(axis=1)
-
-
-def calc_adiabaticity_ab_cavity_coupling(dataframe: pd.DataFrame, force: bool = False):
+def calc_adiabaticity_cavity_coupling(dataframe: pd.DataFrame, force: bool = False):
     """
     In order to be able to eliminate the intermediate states |a> and |b> we need to have the following conditions:
     Δa >> ga, Δb >> gb.
@@ -262,14 +199,14 @@ def calc_adiabaticity_ab_cavity_coupling(dataframe: pd.DataFrame, force: bool = 
     :returns max of ga/|Δa| and gb/|Δb|
     """
     if dataframe.empty:
-        warnings.warn("calc_adiabaticity_ab_cavity_coupling: Empty dataframe")
+        warnings.warn("calc_adiabaticity_cavity_coupling: Empty dataframe")
         return
-    if force == False and 'adiabaticity_ab_cavity_coupling' in dataframe.columns:
+    if force == False and 'adiabaticity_cavity_coupling' in dataframe.columns:
         return
     divis = pd.DataFrame()
     divis['da/ga'] = dataframe['g_a'] / dataframe['Δa'].abs()
     divis['db/gb'] = dataframe['g_b'] / dataframe['Δb'].abs()
-    dataframe['adiabaticity_ab_cavity_coupling'] = divis.max(axis=1)
+    dataframe['adiabaticity_cavity_coupling'] = divis.max(axis=1)
 
 
 def calc_adiabaticity_one_r_eff_Rabi(dataframe: pd.DataFrame, force: bool = False):
@@ -293,6 +230,47 @@ def calc_adiabaticity_one_r_eff_Rabi(dataframe: pd.DataFrame, force: bool = Fals
     divis['Ω2/δ2'] = dataframe['Ω2'].abs() / dataframe['δ2'].abs()
     divis['Ω_3t/Δ_3'] = dataframe['Ω_3t'].abs() / dataframe['Δ_3'].abs()
     dataframe['adiabaticity_one_r_eff_Rabi'] = divis.max(axis=1)
+
+
+def compare_time_evolution(ds: pd.Series, show_plot=False):
+    initial_state = ggg_state
+
+    ds['Ω_3t'] = Ω_3t(0, **ds)
+    ds = ds._append(calc_ΩR_ΔR(ds))
+    # Time evolution
+    times = np.linspace(0, np.amin([4 * np.pi * ds['Ω1'], 10]), 1000)  # Time range for simulation
+
+    # Solve the master equation
+    result = sesolve(Hamiltonian_8x8(ds), initial_state, times, e_ops=[], options={'nsteps': 1e8})
+    # Extract expectation values
+    P_0r = expect(ggg_state.proj(), result.states)  # Probability of being in the ground state |ggg>
+    P_1r = expect(rgg_state.proj() + grg_state.proj() + ggr_state.proj(), result.states)  # P of one Rydberg state
+    P_2r = expect(rrg_state.proj() + rgr_state.proj() + grr_state.proj(), result.states)  # P of two Rydberg states
+    P_3r = expect(rrr_state.proj(), result.states)  # P of three Rydberg states |rrr>
+
+    resul2x2 = sesolve(project_8x8_to_2x2(Hamiltonian_8x8(ds), approx=False), basis(2, 0),
+                       times, e_ops=[], options={'nsteps': 1e8})
+    # Extract expectation values
+    P_ggg2x2 = expect(basis(2, 0).proj(), resul2x2.states)  # Probability of being in the ground state |gg>
+    P_rrr2x2 = expect(basis(2, 1).proj(), resul2x2.states)  # Probability of being in the Rydberg state |rr>
+
+    # Plot the probabilities and coherences
+    if show_plot:
+        plt.figure()
+        plt.plot(times, P_0r, label=r'$P (Ground State)')
+        plt.plot(times, P_1r, label=r'$P (1 Rydberg State)')
+        plt.plot(times, P_2r, label=r'$P (2 Rydberg State)')
+        plt.plot(times, P_3r, label=r'$P (3 Rydberg State)')
+
+        plt.plot(times, P_ggg2x2, label=r'$\langle \psi | ggg | \psi \rangle$ (Ground State)2x2')
+        plt.plot(times, P_rrr2x2, label=r'$\langle \psi | rrr | \psi \rangle$ (Rydberg State)2x2')
+
+        plt.xlabel('Time Ω_1t')
+        plt.ylabel('Probability')
+        plt.legend()
+        plt.tight_layout(pad=0.2)
+        plt.show()
+    return np.sum((P_0r - P_ggg2x2) ** 2 + (P_3r - P_rrr2x2) ** 2)
 
 
 # %% Parameter normalisation to define timescales
@@ -346,103 +324,122 @@ free_params_bounds = {
 }
 
 
+# free_params_bounds = {
+#    'Ω1': [1 * punit, 1 * punit],
+#    'Ω2': [0.01 * punit, 10 * punit],
+#    'Ω3': [0.01 * punit, 10 * punit],
+#    'δ1': [-1000 * punit, -1000 * punit],
+#    'δ2': [-1000 * punit, 1000 * punit],
+#    'δ3': [1000 * punit, 1000 * punit],
+#    'Δa': [-500 * punit, -500 * punit],
+#    'Δb': [500 * punit, 500 * punit],
+#    'g_a': [10 * punit, 10 * punit],
+#    'g_b': [15 * punit, 15 * punit],
+#    'n': [1, 1],
+# }
+
+
 def add_new_params(dataframe: pd.DataFrame, length: int):
     # Generate the parameters set
     free_params_set = {key: np.random.uniform(*value, length) for key, value in free_params_bounds.items()}
     new_df = pd.DataFrame(free_params_set)
-
-    print(f"Initial generated rows: {len(new_df)}")
 
     # Remove all detunings which are too close to zero
     delta_threshold = 1e-4
     new_df = new_df[(new_df['δ1'].abs() > delta_threshold)
                     & (new_df['δ2'].abs() > delta_threshold)
                     & (new_df['δ3'].abs() > delta_threshold)]
-    print(f"Rows after detuning filter: {len(new_df)}")
-
     new_df = new_df[(new_df['Δa'].abs() > delta_threshold)
                     & (new_df['Δb'].abs() > delta_threshold)]
-    print(f"Rows after frequency shift filter: {len(new_df)}")
+    if new_df.empty:
+        return dataframe
 
     # Calculate some meaningful quantities for a sample
-    new_df['Ω1/δ1'] = new_df['Ω1'] / new_df['δ1']
-    new_df['Ω2/δ2'] = new_df['Ω2'] / new_df['δ2']
-    new_df['Ω3/δ3'] = new_df['Ω3'] / new_df['δ3']
+    new_df['Ω1/δ1'] = new_df['Ω1'] / np.abs(new_df['δ1'])
+    new_df = new_df[new_df['Ω1/δ1'] < 1]
+    if new_df.empty:
+        warnings.warn("All data removed due to Ω1/δ1")
+        return dataframe
+    new_df['Ω2/δ2'] = new_df['Ω2'] / np.abs(new_df['δ2'])
+    new_df = new_df[new_df['Ω2/δ2'] < 1]
+    if new_df.empty:
+        warnings.warn("All data removed due to Ω2/δ2")
+        return dataframe
+    new_df['Ω3/δ3'] = new_df['Ω3'] / np.abs(new_df['δ3'])
+    new_df = new_df[new_df['Ω3/δ3'] < 1]
+    if new_df.empty:
+        warnings.warn("All data removed due to Ω3/δ3")
+        return dataframe
 
-    calc_adiabaticity_ab_cavity_coupling(new_df)
-    print(f"Rows after cavity coupling adiabaticity: {len(new_df)}")
-    if not new_df.empty:
-        new_df = new_df[new_df['adiabaticity_ab_cavity_coupling'] < 1e-1]
-    calc_adiabaticity_ab_eff_Rabi(new_df)
-    print(f"Rows after Rabi adiabaticity: {len(new_df)}")
-    if not new_df.empty:
-        new_df = new_df[new_df['adiabaticity_ab_eff_Rabi'] < 1e-1]
+    calc_adiabaticity_cavity_coupling(new_df)
+    new_df = new_df[new_df['adiabaticity_cavity_coupling'] < 1]
+    if new_df.empty:
+        warnings.warn("All data removed due to adiabaticity_cavity_coupling")
+        return dataframe
     calc_adiabaticity_one_r_eff_Rabi(new_df)
-    print(f"Rows after one-r adiabaticity: {len(new_df)}")
-    if not new_df.empty:
-        new_df = new_df[new_df['adiabaticity_one_r_eff_Rabi'] < 1e-1]
+    new_df = new_df[new_df['adiabaticity_one_r_eff_Rabi'] < 1]
+    if new_df.empty:
+        warnings.warn("All data removed due to adiabaticity_one_r_eff_Rabi")
+        return dataframe
 
     Ω_3t(new_df)
     new_df[['ΩR', 'ΔR', 'ΩR/ΔR']] = new_df.apply(lambda row: calc_ΩR_ΔR(row), axis=1)
-    new_df = new_df[abs(new_df['ΩR/ΔR']) > -1e0]
-    print(f"Rows after ΩR/ΔR filter: {len(new_df)}")
+    new_df = new_df[abs(new_df['ΩR/ΔR']) > 1e-2]
+    if new_df.empty:
+        warnings.warn("All data removed due to ΩR/ΔR")
+        return dataframe
+    Δ_1(new_df)
+    Δ_3(new_df)
+    new_df['resonance'] = new_df['ΔR'].abs() / new_df[['Δ_1', 'δ2', 'Δ_3']].abs().min(axis=1)
+    # new_df = new_df[new_df['resonance'] < 2e-1]
+    if new_df.empty:
+        warnings.warn("All data removed due to resonance")
+        return dataframe
+    new_df['log ΩR/ΔR'] = np.log10(new_df['ΩR/ΔR'])
+    new_df['fidelity'] = new_df.apply(lambda row: compare_time_evolution(ds=row, show_plot=False), axis=1)
+    new_df = new_df[new_df['fidelity'] < 1e-1]
+    if new_df.empty:
+        warnings.warn("All data removed due to fidelity")
+        return dataframe
+    # new_df['fidelity'] = new_df.apply(lambda row: compare_time_evolution(ds=row, show_plot=True), axis=1)
+    new_df['well'] = np.sqrt(
+        new_df[['resonance', 'adiabaticity_one_r_eff_Rabi', 'adiabaticity_cavity_coupling']].prod(axis=1))
 
     longer_df = pd.concat([dataframe, new_df], ignore_index=True)
     return longer_df
 
 
 df = pd.DataFrame()
-df = add_new_params(df, int(1e4))
+df = add_new_params(df, int(20))
 
 # %% Calculate some statistics
-while (len(df) < 1e3):
-    df = add_new_params(df, int(1e4))
+while (len(df) < 20):
+    df = add_new_params(df, int(5e3))
     print(f"Length of dataframe: {len(df)}")
-df.sort_values('ΩR', inplace=True, ignore_index=True, ascending=False)
 
+# %%
+df['Delta_rrg'] = df.apply(lambda row: Delta_rrg(**row.to_dict()), axis=1)
+df['Delta_rgr'] = df.apply(lambda row: Delta_rgr(**row.to_dict()), axis=1)
+df['abs Delta_rgr'] = np.abs(df.apply(lambda row: Delta_rgr(**row.to_dict()), axis=1))
+df['Delta_grr'] = df.apply(lambda row: Delta_grr(**row.to_dict()), axis=1)
+df['log fidelity'] = np.log10(df['fidelity'])
+df['abs Delta_rgr/δ2'] = df['abs Delta_rgr'] / np.abs(df['δ2'])
+df['δ1*δ3'] = df['δ1'] * df['δ3']
+df.sort_values('fidelity', inplace=True, ignore_index=True, ascending=False)
 # %% Plot pairplot of the parameters
-sns.pairplot(df,
-             hue='ΩR/ΔR',
-             vars=['ΩR', 'ΔR',
-                   'adiabaticity_one_r_eff_Rabi', 'Ω1'],
+sns.pairplot(df[df['ΩR/ΔR'] > 1e-3],
+             hue='log fidelity',
+             vars=['log fidelity', 'log ΩR/ΔR', 'resonance', 'adiabaticity_cavity_coupling'],
              diag_kind=None,
              kind='scatter',
              # corner=True,
              # plot_kws={'alpha': 0.8},
+             palette='flare_r',
              )
 plt.show()
 
 # %% Test the projection using time evolution comparison
 
-initial_state = ggg_state
-
-# Time evolution
-times = np.linspace(0, 2 * punit, 1000)  # Time range for simulation
-
-# Solve the master equation
-result = mesolve(Hamiltonian_8x8(df.iloc[0]), initial_state, times,
-                 c_ops=[], e_ops=[], options={'nsteps': 1e8})
-# Extract expectation values
-P_ggg = expect(ggg_state * ggg_state.dag(), result.states)  # Probability of being in the ground state |gg>
-P_rrr = expect(rrr_state * rrr_state.dag(), result.states)  # Probability of being in the Rydberg state |rr>
-
-resul2x2 = mesolve(project_8x8_to_2x2(Hamiltonian_8x8(df.iloc[0]), approx=False), basis(2, 0).proj(), times,
-                   c_ops=[], e_ops=[], options={'nsteps': 1e8})
-# Extract expectation values
-P_ggg2x2 = expect(basis(2, 0).proj(), resul2x2.states)  # Probability of being in the ground state |gg>
-P_rrr2x2 = expect(basis(2, 1).proj(), resul2x2.states)  # Probability of being in the Rydberg state |rr>
-
-# Plot the probabilities and coherences
-plt.figure()
-plt.plot(times, P_ggg, label=r'$\langle \psi | ggg | \psi \rangle$ (Ground State)')
-plt.plot(times, P_rrr, label=r'$\langle \psi | rrr | \psi \rangle$ (Rydberg State)')
-plt.plot(times, P_ggg2x2, label=r'$\langle \psi | ggg | \psi \rangle$ (Ground State)2x2')
-plt.plot(times, P_rrr2x2, label=r'$\langle \psi | rrr | \psi \rangle$ (Rydberg State)2x2')
-
-plt.xlabel('Time (arb. units)')
-plt.ylabel('Probability')
-plt.legend()
-plt.tight_layout(pad=0.2)
-plt.show()
+compare_time_evolution(ds=df.iloc[0], show_plot=True)
 
 # %%
